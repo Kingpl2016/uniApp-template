@@ -2,13 +2,13 @@
 
 ### 前言
 
-因为每次在开发新项目时，都需要一个开箱即用的基础框架，避免重新开始搭建而浪费时间，遂记录下从零开始搭建一个开箱即用的框架。随着前端的发展，未来版本的更新需要重新搭建框架时也可以作个参考。
+因为每次在开发新项目时，都需要一个开箱即用的基础框架，避免重新开始搭建而浪费时间，遂记录下从零开始搭建一个开箱即用的框架。
 
 实现功能
 
 -   <input type="checkbox" checked>使用 `Vue3` 进行开发</input>
 -   <input type="checkbox" checked>构建工具 使用 `Vite`</input>
--   <input type="checkbox" checked>使用 `Vuex`</input>
+-   <input type="checkbox" checked>使用 `pania`</input>
 -   <input type="checkbox" checked>集成 `Typescript`</input>
 -   <input type="checkbox" checked>集成 `Scss` 来编写 css</input>
 -   <input type="checkbox" checked>集成 `Eslint` + `Stylelint` + `Prettier` 来规范和格式化代码</input>
@@ -16,6 +16,8 @@
 -   <input type="checkbox" checked>封装 `uni-request` 请求</input>
 -   <input type="checkbox" checked>集成 `Mock` 辅助开发</input>
 -   <input type="checkbox" checked>集成 `uni-ui`</input>
+-   <input type="checkbox" checked>集成 `vant4`</input>
+-   <input type="checkbox" checked>集成 `tailwindcss`</input>
 
 项目整体目录
 
@@ -32,7 +34,6 @@
 |   ├── pages/              // 页面
 |   ├── store/
 |   |   ├── index.ts        // store 配置文件
-|   |   ├── index.d.ts      // 声明文件
 |   |   └── modules
 |   |       └── system.ts   // 自己的业务模块，这里写|个示例
 |   ├── styles/             // 样式文件
@@ -76,17 +77,63 @@ npx degit dcloudio/uni-preset-vue#vite-ts uniApp-template
 2. 配置别名 `@` 来表示 `src` 目录
 3. 配置代理解决开发环境跨域的问题
 4. 打包调整生成规范的文件
+5. 自动导入
 
-修改 vite.config.ts 文件
+修改 `vite.config.ts` 文件
 
 ```ts
 import { defineConfig } from 'vite'
 import uni from '@dcloudio/vite-plugin-uni'
 import { resolve } from 'path'
 
+import vueSetupExtend from 'vite-plugin-vue-setup-extend'
+
+// 加上下面这一行
+import AutoImport from 'unplugin-auto-import/vite'
+
+// @ts-ignore
+import nested from 'tailwindcss/nesting'
+import tailwindcss from 'tailwindcss'
+import tailwindcssConfig from './tailwind.config.cjs' // 注意匹配实际文件
+// @ts-ignore
+import postcssPresetEnv from 'postcss-preset-env'
+import uniTailwind from '@uni-helper/vite-plugin-uni-tailwind'
+
+import { VantResolver } from 'unplugin-vue-components/resolvers'
+import Components from 'unplugin-vue-components/vite'
+
 // https://vitejs.dev/config/
 export default defineConfig({
-    plugins: [uni()],
+    envDir: resolve(__dirname, 'env'),
+    plugins: [uni(),
+        uniTailwind({
+            /* options */
+          }),
+        vueSetupExtend(),
+        Components({
+          resolvers: [VantResolver()],
+        }),
+    // 加上下面的配置
+    AutoImport({
+        include: [
+          /\.[tj]sx?$/, // .ts, .tsx, .js, .jsx
+          /\.vue$/,
+          /\.vue\?vue/, // .vue
+        ],
+        imports: [
+          'vue',
+          'pinia',
+          'uni-app',
+        ],
+        // Generate corresponding .eslintrc-auto-import.json file.
+      // eslint globals Docs - https://eslint.org/docs/user-guide/configuring/language-options#specifying-globals
+      eslintrc: {
+        enabled: false, // 若没此json文件，先开启，生成后在关闭
+        filepath: './.eslintrc-auto-import.json', // Default `./.eslintrc-auto-import.json`
+        globalsPropValue: true, // Default `true`, (true | false | 'readonly' | 'readable' | 'writable' | 'writeable')
+      },
+        dts: 'src/typings/auto-imports.d.ts',
+      }),],
     resolve: {
         // 配置别名
         alias: {
@@ -100,7 +147,19 @@ export default defineConfig({
                 // 因为uni.scss可以全局使用，这里根据自己的需求调整
                 additionalData: '@import "./src/styles/global.scss";'
             }
-        }
+        },
+        postcss: {
+            plugins: [
+              nested(),
+              tailwindcss({
+                config: tailwindcssConfig,
+              }),
+              postcssPresetEnv({
+                stage: 3,
+                features: { 'nesting-rules': false },
+              }),
+            ],
+          },
     },
     // 开发服务器配置
     server: {
@@ -110,7 +169,7 @@ export default defineConfig({
         proxy: {
             // 个人习惯，这里就用/dev作为前缀了
             '/dev': {
-                target: 'https://xxx.com/api',
+                target: 'https://suggest.taobao.com',
                 changeOrigin: true,
                 // 路径重写，去掉/dev
                 rewrite: (path) => path.replace(/^\/dev/, '')
@@ -132,6 +191,7 @@ export default defineConfig({
         /** 配置h5打包js,css,img分别在不同文件夹end */
     }
 })
+
 ```
 
 在 `tsconfig.json` 中添加配置，使编辑器可以识别我们的别名。
@@ -167,99 +227,47 @@ npm run dev:h5
 └── src/
     ├── store/
         ├── index.ts  // store 配置文件
-        ├── index.d.ts  // 声明文件
         ├── modules
             ├── system.ts // 自己的业务模块，这里写一个示例
 ```
 
-首先编写我们的声明文件，这里对我们所有的 store 添加一个声明，以便我们在使用的使用编辑器有提示。
 
-`src/store/index.d.ts`
-
-```ts
-import { rootStateType } from './index'
-import { systemStateType } from './modules/system'
-
-export interface StateType extends rootStateType {
-    system: systemStateType
-}
-```
 
 然后在配置文件中来实例化 store
 
 `src/store/index.ts`
 
 ```ts
-import { createStore } from 'vuex'
-import { StateType } from './index.d'
+//import type { App } from 'vue'
 
-// 批量引入其他module，
-const files = import.meta.globEager('./modules/*.ts') // vite的写法
-const keys = Object.keys(files)
+import { createPinia} from 'pinia'
 
-const modules: any = {}
+//import piniaPersist from 'pinia-plugin-persist-uni'
 
-keys.forEach((key) => {
-    if (Object.prototype.hasOwnProperty.call(files, key)) {
-        // 提取文件的名字作为模块名
-        modules[key.replace(/(\.\/modules\/|\.ts)/g, '')] = files[key].default
-    }
-})
+const pinia = createPinia();
 
-/** 全局的state,这个看自己的需求，如果有用到就在createStore中添加 */
-export interface rootStateType {}
+//持久化
+//pinia.use(piniaPersist)
 
-export default createStore<StateType>({
-    modules
-})
+// export function setupStore(app: App<Element>){
+//     app.use(pinia);
+// }
+
+export default  pinia
 ```
 
-在 modules 文件夹中根据自己的业务来创建模块，同时在 index.d.ts 中加入声明。例如：`src/store/modules/system.ts`
+
+
+在 `plugins/index.ts` 中挂载组件
 
 ```ts
-import { Module } from 'vuex'
-import { rootStateType } from '@/store'
 
-export interface systemStateType {
-    title: string
-}
-
-const systemModule: Module<systemStateType, rootStateType> = {
-    namespaced: true,
-    state: () => ({
-        title: '你好，我是uni-app'
-    })
-}
-
-export default systemModule
-```
-
-在 `main.ts` 文件中挂载 vuex
-
-```ts
-import { createSSRApp } from 'vue'
-import App from './App.vue'
-import store from './store'
-
-// eslint-disable-next-line import/prefer-default-export
-export function createApp() {
-    const app = createSSRApp(App).use(store)
-    return {
-        app
-    }
-}
 ```
 
 最后使用 vuex，常见的两种用法。
 
 ```ts
-// 使用this
-this.$store.state.system.title
 
-// 使用useStore
-import { useStore } from 'vuex'
-const store = useStore()
-console.log(store.state.system.title)
 ```
 
 <img src="http://file.calmharbin.icu/20220227223112.png" width="400">
@@ -270,9 +278,8 @@ console.log(store.state.system.title)
 
 ```ts
 // import 'vue' // 必须要引入vue,否则就成了覆盖
-import { StateType } from '@/store/index.d'
 import { InjectionKey } from 'vue'
-import { Store } from 'vuex'
+
 
 /**
  * 这里为什么用vue，而不用@vue/runtime-core，是因为使用pnpm安装依赖是，node_modules中没有@vue/runtime-core，
@@ -286,10 +293,6 @@ declare module 'vue' {
     }
 }
 
-// 扩展useStore声明
-declare module 'vuex' {
-    export function useStore<S = StateType>(injectKey?: InjectionKey<Store<S>> | string): Store<S>
-}
 
 // 这个导出一个东西也可以，或者上面引入vue
 export {}
@@ -848,14 +851,6 @@ pnpm add @dcloudio/uni-ui
 <uni-rate :size="18" :value="5" />
 ```
 
-H5 和小程序效果图
 
-<img src="http://file.calmharbin.icu/20220309234926.png" width="400" style="flex: 0 0 200px;" />
-
-<img src="http://file.calmharbin.icu/20220309234817.png" width="400" />
-
-### 写在最后
-
-如果你想快速的体验 vue3 开发，你可以拉取我的源码直接开发。
 
 >https://tob-use.netlify.app/api/utilities/and.html
